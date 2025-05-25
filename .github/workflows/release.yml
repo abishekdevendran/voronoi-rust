@@ -5,30 +5,12 @@ on:
     tags:
       - 'v*' # Trigger the workflow on version tags like v0.1.0
 
-permissions: # Needed to create a release and upload assets
-  contents: write
+permissions:
+  contents: write # Required for creating releases and uploading assets
 
 jobs:
-  create_release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    steps:
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-
   build_binaries:
     name: Build Binaries for ${{ matrix.os }} (${{ matrix.target }})
-    needs: create_release # Ensure release is created before building
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -36,19 +18,29 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             binary_name_suffix: ""
-            asset_name_suffix: "-linux-amd64"
-          - os: macos-latest # You might need macos-13 for older compatibility or macos-14
+            asset_name_package: voronoi-rust-linux-amd64 # Used for the final asset name
+            asset_filename: voronoi-rust-linux-amd64    # Used for the actual file glob
+          - os: macos-latest
             target: x86_64-apple-darwin
             binary_name_suffix: ""
-            asset_name_suffix: "-macos-amd64"
-          - os: macos-latest # For Apple Silicon (M1/M2/M3)
+            asset_name_package: voronoi-rust-macos-amd64
+            asset_filename: voronoi-rust-macos-amd64
+          - os: macos-latest
             target: aarch64-apple-darwin
             binary_name_suffix: ""
-            asset_name_suffix: "-macos-arm64"
+            asset_name_package: voronoi-rust-macos-arm64
+            asset_filename: voronoi-rust-macos-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             binary_name_suffix: ".exe"
-            asset_name_suffix: "-windows-amd64.exe"
+            asset_name_package: voronoi-rust-windows-amd64.exe
+            asset_filename: voronoi-rust-windows-amd64.exe
+          # Example for 32-bit Windows (uncomment and adapt if needed)
+          # - os: windows-latest
+          #   target: i686-pc-windows-msvc
+          #   binary_name_suffix: ".exe"
+          #   asset_name_package: voronoi-rust-windows-x86.exe
+          #   asset_filename: voronoi-rust-windows-x86.exe
 
     steps:
       - name: Checkout code
@@ -68,63 +60,59 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ matrix.target }}
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
 
       - name: Build
         run: cargo build --verbose --release --target ${{ matrix.target }}
         env:
-          RUSTFLAGS: "" # Add any specific RUSTFLAGS if needed, e.g., for static linking on Linux
+          RUSTFLAGS: "" # Add specific RUSTFLAGS if needed
 
-      # This step assumes your binary is named 'voronoi-rust' as per your Cargo.toml
-      # If it's different, or if you have multiple binaries, adjust accordingly.
-      - name: Prepare artifact
-        # For Linux/macOS, the binary is in target/<target>/release/
-        # For Windows, it's target\<target>\release\
-        # The exact path depends on the target triple.
+      - name: Prepare artifact for upload
         run: |
           mkdir staging
-          cp target/${{ matrix.target }}/release/voronoi-rust${{ matrix.binary_name_suffix }} staging/voronoi-rust${{ matrix.asset_name_suffix }}
+          cp target/${{ matrix.target }}/release/voronoi-rust${{ matrix.binary_name_suffix }} staging/${{ matrix.asset_filename }}
         shell: bash
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: voronoi-rust-${{ matrix.target }}
-          path: staging/voronoi-rust${{ matrix.asset_name_suffix }}
+          name: ${{ matrix.asset_filename }} # Artifact name will be e.g., voronoi-rust-linux-amd64
+          path: staging/${{ matrix.asset_filename }} # Path to the specific file
 
-  upload_assets:
-    name: Upload Release Assets
-    needs: build_binaries # Run after all binaries are built
+  release_assets:
+    name: Create GitHub Release and Upload Assets
+    needs: build_binaries # Ensure this job runs only after all binaries are built
     runs-on: ubuntu-latest
-    strategy:
-      matrix: # Corresponds to the 'include' matrix in 'build_binaries'
-        include:
-          - target: x86_64-unknown-linux-gnu
-            asset_name_suffix: "-linux-amd64"
-          - target: x86_64-apple-darwin
-            asset_name_suffix: "-macos-amd64"
-          - target: aarch64-apple-darwin
-            asset_name_suffix: "-macos-arm64"
-          - target: x86_64-pc-windows-msvc
-            asset_name_suffix: "-windows-amd64.exe"
-          # - target: i686-pc-windows-msvc
-          #   asset_name_suffix: "-windows-x86.exe"
+    permissions:
+      contents: write # Already defined at workflow level, but good to be explicit if needed elsewhere
     steps:
-      - name: Download artifact for ${{ matrix.target }}
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: voronoi-rust-${{ matrix.target }}
-          path: artifacts/${{ matrix.target }}
+          path: artifacts # This downloads all artifacts into the 'artifacts' directory
+                          # Each artifact (which is a single file in this setup) will be in its own subdirectory
+                          # e.g., artifacts/voronoi-rust-linux-amd64/voronoi-rust-linux-amd64
 
-      - name: Upload Release Asset (${{ matrix.asset_name_suffix }})
-        uses: actions/upload-release-asset@v1
+      - name: List downloaded files (for debugging)
+        run: ls -R artifacts
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v1 # Updated action
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: artifacts/${{ matrix.target }}/voronoi-rust${{ matrix.asset_name_suffix }}
-          asset_name: voronoi-rust${{ matrix.asset_name_suffix }}
-          asset_content_type: application/octet-stream
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          # body: "Released ${{ github.ref_name }}" # Optional: Custom release body
+          # body_path: "CHANGELOG.md" # Optional: Path to a file with release notes
+          files: | # List of files to upload. These paths are relative to the runner's workspace root.
+            artifacts/voronoi-rust-linux-amd64/voronoi-rust-linux-amd64
+            artifacts/voronoi-rust-macos-amd64/voronoi-rust-macos-amd64
+            artifacts/voronoi-rust-macos-arm64/voronoi-rust-macos-arm64
+            artifacts/voronoi-rust-windows-amd64.exe/voronoi-rust-windows-amd64.exe
+            # artifacts/voronoi-rust-windows-x86.exe/voronoi-rust-windows-x86.exe # If you added 32-bit windows
+          fail_on_unmatched_files: true # Recommended: fail if any listed files are not found
