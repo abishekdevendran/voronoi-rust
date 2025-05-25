@@ -1,0 +1,11 @@
+[package]
+name = "voronoi-rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.38", features = ["derive"] }
+fastrand = "2.3.0"
+image = "0.25.6"
+kiddo = "5.0.3"
+rayon = "1.10.0"
