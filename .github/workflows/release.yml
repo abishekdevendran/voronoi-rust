@@ -18,8 +18,8 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             binary_name_suffix: ""
-            asset_name_package: voronoi-rust-linux-amd64 # Used for the final asset name
-            asset_filename: voronoi-rust-linux-amd64    # Used for the actual file glob
+            asset_name_package: voronoi-rust-linux-amd64
+            asset_filename: voronoi-rust-linux-amd64
           - os: macos-latest
             target: x86_64-apple-darwin
             binary_name_suffix: ""
@@ -35,12 +35,6 @@ jobs:
             binary_name_suffix: ".exe"
             asset_name_package: voronoi-rust-windows-amd64.exe
             asset_filename: voronoi-rust-windows-amd64.exe
-          # Example for 32-bit Windows (uncomment and adapt if needed)
-          # - os: windows-latest
-          #   target: i686-pc-windows-msvc
-          #   binary_name_suffix: ".exe"
-          #   asset_name_package: voronoi-rust-windows-x86.exe
-          #   asset_filename: voronoi-rust-windows-x86.exe
 
     steps:
       - name: Checkout code
@@ -114,5 +108,4 @@ jobs:
             artifacts/voronoi-rust-macos-amd64/voronoi-rust-macos-amd64
             artifacts/voronoi-rust-macos-arm64/voronoi-rust-macos-arm64
             artifacts/voronoi-rust-windows-amd64.exe/voronoi-rust-windows-amd64.exe
-            # artifacts/voronoi-rust-windows-x86.exe/voronoi-rust-windows-x86.exe # If you added 32-bit windows
           fail_on_unmatched_files: true # Recommended: fail if any listed files are not found
